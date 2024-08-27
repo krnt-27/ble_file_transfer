@@ -1,9 +1,8 @@
-<!-- For Multiple FIles -->
-<!DOCTYPE html>
+<!-- For Multiple Files -->
+<!DOCTYPE html> 
 <html>
-
 <head>
-  <title>BLE File Transfer Ex</title>
+  <title>BLE File Transfer Example Multi</title>
 </head>
 
 <body>
@@ -23,7 +22,7 @@
     <button id="cancel-transfer-button" disabled>Cancel Transfer</button>
     <div id="transfer-progress" style="display: none;">
       <label for="file">Uploading progress:</label>
-      <progress id="transfer-file" value="32" max="100"> 32% </progress>
+      <progress id="transfer-file" value="0" max="100"> 0% </progress>
     </div>
     <div id="status-label">Click button to connect to the board</div>
   </div>
@@ -33,8 +32,8 @@
   let fileText;
   let filename;
   let cancelTransferFlag = false;
+  let fileInfos = []; // To store file information
 
-  
   // const SERVICE_UUID = '4fafc201-1fb5-459e-8fcc-c5c9c331914b';
   
   const SERVICE_UUID = 'bf88b656-0000-4a61-86e0-769c74863660';
@@ -46,31 +45,33 @@
   const connectButton = document.getElementById('connect-button');
   const transferFileButton = document.getElementById('transfer-file-button');
   const cancelTransferButton = document.getElementById('cancel-transfer-button');
-  const statusElement = document.getElementById('status-label');
-  const progressBar = document.getElementById('transfer-progress');
-  const progressValue = document.getElementById('transfer-file');
+  const progressBar = document.getElementById('transfer-progress'); //disabled
+  const progressValue = document.getElementById('transfer-file');   //disabled
+  const statusElement = document.getElementById('status-label');    //disabled
 
   if (!("bluetooth" in navigator)) {
     msg('Browser not supported');
     alert('Error: This browser doesn\'t support Web Bluetooth. Try using Chrome.');
   }
 
+  function msg(m) {
+    statusElement.innerHTML = m;
+  }
+
   connectButton.addEventListener('click', function (event) {
-    connect();
+    connect(); //64
   });
-  
-  
   
   async function connect() {
     msg('Requesting device ...');
     
+    //get list of BLE active with filter UUID
     const device = await navigator.bluetooth.requestDevice({
       filters: [{ services: [SERVICE_UUID] }]
     });
-
     
-    console.log('Mencoba menghubungkan ke perangkat:', device.name);
     msg('Connecting to device ...' + device.name);
+    console.log('Connecting to device ...', device.name);
     function onDisconnected(event) {
       transferFileButton.disabled = cancelTransferButton.disabled = true;
       connectButton.disabled = false
@@ -79,50 +80,140 @@
     }
     
     device.addEventListener('gattserverdisconnected', onDisconnected);
+
+    msg('Getting primary server ...');
+    console.log('Getting primary server ...');
     const server = await device.gatt.connect();
+    console.log(server);
     
     msg('Getting primary service ...');
+    console.log('Getting primary service ...');
     const service = await server.getPrimaryService(SERVICE_UUID);
+    console.log(service);
     
     msg('Getting COMMAND characteristics ...');
+    console.log('Getting COMMAND characteristics ...');
     commandCharacteristic = await service.getCharacteristic(COMMAND_UUID);
     console.log(commandCharacteristic)
     
     msg('Getting RESPONS characteristics ...');
+    console.log('Getting RESPONS characteristics ...');
     responsCharacteristic = await service.getCharacteristic(RESPONS_UUID);
+    console.log(responsCharacteristic);
     
     msg('Getting BLOB characteristics ...');
+    console.log('Getting BLOB characteristics ...');
     fileBlockCharacteristic = await service.getCharacteristic(BLOCK_FILE_UUID);
     console.log(fileBlockCharacteristic);
 
     msg('Getting CHECKSUM characteristics ...');
+    console.log('Getting CHECKSUM characteristics ...');
     checksumCharacteristic = await service.getCharacteristic(CHECKSUM_UUID);
     console.log(checksumCharacteristic);
 
     msg('Ready...');
+    console.log('Ready...');
 
     transferFileButton.disabled = cancelTransferButton.disabled = false;
     connectButton.disabled = true;
 
     transferFileButton.addEventListener('click', async function (event) {
-      requestFile();
+      msg("Requesting File...");
       console.log("Requesting File...");
+      requestFile(); //127
     });
   }
 
-  function msg(m) {
-    statusElement.innerHTML = m;
-  }
+  async function requestFile() {
+    // iterate for downloading file
+    // for (let index = 0; index < 3; index++) {
+      progressBar.style.display = 'inline-block';
+      progressValue.value = 0;
+      
+      const commandStr = 'REQ_LOG_DATA'; //debug penting
 
-  async function disconnectBLE() {
+      msg("command characteristics");
+      console.log("command characteristics");               // [R, E, Q, _, L, O, G, _, D, A, T, A]
+      var commandArray = new Uint8Array(commandStr.length); // [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+      for (var i = 0; i < commandArray.length; ++i) {
+        commandArray[i] = commandStr.charCodeAt(i);
+        // console.log(commandArray[i] + " - " + commandStr.charCodeAt(i))
+        // [ R,  E,  Q, _,  L,  O,  G,  _,  D,  A,  T,  A]
+        // [82, 69, 81, 95, 76, 79, 71, 95, 68, 65, 84, 65]
+      }
 
+      msg("command construct done");
+      console.log("command construct done");
+      /*CODE DIBAWAH INI AKAN PRINT DI ARDUINO IDE:
+        ~ Got Command: REQ_LOG_DATA
+        ~ requesting log files !!!
+        ~ Attempting to open file: /LampuPintar/20240718.log
+        ~ from getFileInfo, print file.name(): 20240718.log
+        ~ setFileInfo respons_characteristic on bleFileTransfer.h
+        ~ setFileInfo to callback on bleCallBacks.h
+        ~ setFileInfo transferObj on bleFileTransfer.h
+        DAN,
+        CODE DIBAWAH INI AKAN SET DI value pada commandCharacteristic
+        ex: responsCharacteristic.value = DataView(12)
+      */
+      await commandCharacteristic.writeValue(commandArray); // line 164 on github doc
+      console.log("command array");
+      console.log(commandArray)
+      msg("command send");
+
+      /*CODE DIBAWAH INI AKAN SET DI value pada responsCharacteristic
+        ex: responsCharacteristic.value = DataView(72)
+      */
+      let fileInfo = await responsCharacteristic.readValue();
+      console.log(`fileInfo: `)
+      console.log(fileInfo)
+      
+      let fileStrLength = fileInfo.getUint8(4, true);
+      console.log(`fileName length: `);
+      console.log(fileStrLength);
+      
+      filename = String.fromCharCode.apply(String, new Uint8Array(fileInfo.buffer, 5, fileStrLength));
+      console.log(`filename: `);
+      console.log(filename);
+
+      const ext = filename.split('.').pop()
+      console.log(`file extention ${ext}`) // .log, .txt, etc
+
+      let fileSize = fileInfo.getUint32(0, true); //5120;//fileInfo.getUint32(0, true);
+      console.log(`file size: `);
+      console.log(fileSize);
+
+      let fileBuffer = new ArrayBuffer(fileSize); // line 195 on github doc
+      console.log('fileBuffer: ');
+      console.log(fileBuffer);
+      // To this on terminal browser
+
+      msg("start receive file");
+      let startTime = performance.now();
+      await receiveFileBlock(fileBuffer, 0, ext);
+      let endTime = performance.now();
+      let timeTaken = endTime - startTime;
+      let totalSeconds = Math.floor(timeTaken / 1000);
+      let hours = Math.floor(totalSeconds / 3600);
+      let minutes = Math.floor((totalSeconds % 3600) / 60);
+      let seconds = totalSeconds % 60;
+
+      console.log(`Time: ${hours} jam, ${minutes} menit, ${seconds} detik`);
+      msg("finished");
+      
+      transferFileButton.disabled = false
+      cancelTransferButton.disabled = true;
+  
+      progressValue.value = 100;
+      progressBar.style.display = 'none';
+
+    // }
   }
 
   async function cancelTransfer(event) {
     const commandStr = 'CANCEL_TRANSFER';
 
     msg("command characteristics");
-
     var commandArray = new Uint8Array(commandStr.length);
     for (var i = 0; i < commandArray.length; ++i) {
       commandArray[i] = commandStr.charCodeAt(i);
@@ -131,213 +222,179 @@
     msg("Transfer cancel ........");
     await commandCharacteristic.writeValue(commandArray);
     cancelTransferFlag = true;
-
   }
 
-  async function requestFile() {
-    progressBar.style.display = 'inline-block';
-    progressValue.value = 0;
-
-    const commandStr = 'REQ_LOG_DATA';
-
-    msg("command characteristics");
-    console.log("command characteristics"); //edited
-    var commandArray = new Uint8Array(commandStr.length);
-    for (var i = 0; i < commandArray.length; ++i) {
-      commandArray[i] = commandStr.charCodeAt(i);
-    }
-
-    msg("command construct done");
-    await commandCharacteristic.writeValue(commandArray);
-    console.log("command array"); //edited
-    console.log(commandArray)
-    msg("command send");
-
-    let fileInfo = await responsCharacteristic.readValue();
-
-    console.log("fileInfo"); //edited
-    console.log(fileInfo)
-
-    // console.log("file size = " + fileInfo.getUint32(0, true));
-    console.log(`file size: ${fileInfo.getUint32(0, true)}`);
-    // console.log("fileName length = " + fileInfo.getUint8(4, true));
-    console.log(`fileName length: ${fileInfo.getUint8(4, true)}`);
-
-    let fileSize = fileInfo.getUint32(0, true); //5120;//fileInfo.getUint32(0, true);
-    let fileStrLength = fileInfo.getUint8(4, true);
-    filename = String.fromCharCode.apply(String, new Uint8Array(fileInfo.buffer, 5, fileStrLength));
-
-    console.log(`filename: ${filename}`);
-
-    let fileBuffer = new ArrayBuffer(fileSize);
-    // program to get the file extension
-
-    function getFileExtension(fileSplit) {
-
-      // get file extension
-      const extension = fileSplit.split('.').pop();
-      return extension;
-    }
-
-    const result = getFileExtension(filename);  
-    console.log(`file extention ${result}`)
-
-    msg("start receive file");
-    let startTime = performance.now();
-    await receiveFileBlock(fileBuffer, 0, result);
-    let endTime = performance.now();
-    let timeTaken = endTime - startTime;
-    let totalSeconds = Math.floor(timeTaken / 1000);
-    let hours = Math.floor(totalSeconds / 3600);
-    let minutes = Math.floor((totalSeconds % 3600) / 60);
-    let seconds = totalSeconds % 60;
-
-    console.log(`Time: ${hours} jam, ${minutes} menit, ${seconds} detik`);
-    msg("finished");
-
-    transferFileButton.disabled = false
-    cancelTransferButton.disabled = true;
-
-    progressValue.value = 100;
-    progressBar.style.display = 'none';
-  }
-
-  async function receiveFileBlock(fileContents, bytesAlreadyReceived, fileType) {
+  // function utk download / transfer per 512 byte
+  async function receiveFileBlock(fileContents, bytesAlreadyReceived, fileType) { // (fileBuffer, 0, ext);
     console.log("Masuk func receiveFileBlock");
     transferFileButton.disabled = connectButton.disabled = true;
     cancelTransferButton.disabled = false;
 
     cancelTransferButton.addEventListener('click', function (event) {
       console.log("Cancel button clicked");
-       cancelTransfer();
+       cancelTransfer(); //258
     });
 
     // let bytesRemaining = fileContents.byteLength - bytesAlreadyReceived;
 
     // Menyimpan semua blok yang diterima
-    let receivedChunks = [];    
+    let receivedChunks = [];
+    // toggle ini
     while (bytesAlreadyReceived < fileContents.byteLength && !cancelTransferFlag) {
-        let blob = await fileBlockCharacteristic.readValue();
-        
-        // Menyimpan blok yang diterima
-        receivedChunks.push(new Uint8Array(blob.buffer)); 
-        bytesAlreadyReceived += blob.byteLength;
+      /*CODE DIBAWAH INI AKAN PRINT DI ARDUINO IDE:
+        Fungsi onRead() di bleCallBacks.h di panggil...
+        fifile size 1: 1274
+        fifile size 2: 1274
+        ------ File Dibuka -------
+        ------ Bytes Read = 512
+        Start seek : 512
+        Sisa Byte  : 762
+        Fungsi onRead() di bleCallBacks.h di panggil...
+        fifile size 1: 762
+        fifile size 2: 762
+        ------ File Dibuka -------
+        ------ Bytes Read = 512
+        Start seek : 1024
+        Sisa Byte  : 250
+        Fungsi onRead() di bleCallBacks.h di panggil...
+        fifile size 1: 250
+        fifile size 2: 250
+        ------ File Dibuka -------
+        ------ Bytes Read = 250
+        Start seek : 1274
+        ------ File Ditutup -------
+        Transfer Sukses !
+        Sisa Byte  : 0
+        &&
+        CODE DIBAWAH INI AKAN SET DI value pada responsCharacteristic
+        ex: responsCharacteristic.value = DataView(72)
+      */
+      let blob = await fileBlockCharacteristic.readValue(); // debug penting, yg mnybbkan file dibuka tutup dst...
 
-        let valueBar = (bytesAlreadyReceived / fileContents.byteLength) * 100;
-        progressValue.value = valueBar;
-        console.log(`value bar ${valueBar}`);
+      // Menyimpan blok yang diterima
+      receivedChunks.push(new Uint8Array(blob.buffer));
+      bytesAlreadyReceived += blob.byteLength;
+
+      let valueBar = (bytesAlreadyReceived / fileContents.byteLength) * 100;
+      progressValue.value = valueBar;
+      console.log(`value bar ${valueBar}`);
     }
 
     if (cancelTransferFlag) {
-        msg('Transfer cancelled.');
-        console.log("and transfer cancelled");
-        cancelTransferFlag = false;
+      msg('Transfer cancelled 😔');
+      console.log("and transfer cancelled");
+      cancelTransferFlag = false;
     } else {
-        console.log("DONE !!");
-        console.log(`Data yang diterima: ${bytesAlreadyReceived}`);
-        
-        // Menggabungkan semua blok yang diterima ke dalam satu Uint8Array
-        let concatenatedChunks = new Uint8Array(fileContents.byteLength);
-        let offset  = 0;
-        
-        receivedChunks.forEach(chunk => {
-            concatenatedChunks.set(chunk, offset);
-            offset += chunk.length;
-            console.log(`offset ${offset}`);
-        });
+      msg("Transfer finished 🤗");
+      console.log(`Data yang diterima: ${bytesAlreadyReceived}`);
 
-        const textDecoder = new TextDecoder();
-        fileText = textDecoder.decode(concatenatedChunks);
-        console.log("File text:", fileText);
+      // toggle this // Menggabungkan semua blok yang diterima ke dalam satu Uint8Array
+      let concatenatedChunks = new Uint8Array(fileContents.byteLength);
+      let offset  = 0;
 
-        let mimeType = '';
-        if (fileType === 'pdf') {
-          mimeType = 'application/pdf';
-        } else if (fileType === 'txt' || fileType === 'log') {
-          mimeType = 'text/plain';
-        } else if (fileType === 'png') {
-          mimeType = 'image/png';
-        } else if (fileType === 'jpg' || fileType === 'jpeg') {
-          mimeType = 'image/jpeg';
-        } else if (fileType === 'tar') {
-          mimeType = 'application/x-tar';
-        } else if (fileType === 'zip') {
-          mimeType = 'application/zip';
-        } else {
-          console.error('Tipe file tidak didukung.');
-          return;
-        }
+      receivedChunks.forEach(chunk => {
+        concatenatedChunks.set(chunk, offset);
+        offset += chunk.length;
+        console.log(`offset ${offset}`);
+      });
 
-        // Menyimpan sebagai Blob dengan tipe yang sesuai
-        let fileDownload = new Blob([concatenatedChunks], { type: mimeType }); 
-        let url = URL.createObjectURL(fileDownload);
-        let link = document.createElement('a');
-        link.href = url;
-        link.download = filename; 
-        link.click();
-        URL.revokeObjectURL(url);
+      const textDecoder = new TextDecoder();
+      fileText = textDecoder.decode(concatenatedChunks);
+      console.log("File text:", fileText);
+
+      let mimeType = '';
+      if (fileType === 'pdf') {
+        mimeType = 'application/pdf';
+      } else if (fileType === 'txt' || fileType === 'log') {
+        mimeType = 'text/plain';
+      } else if (fileType === 'png') {
+        mimeType = 'image/png';
+      } else if (fileType === 'jpg' || fileType === 'jpeg') {
+        mimeType = 'image/jpeg';
+      } else if (fileType === 'tar') {
+        mimeType = 'application/x-tar';
+      } else if (fileType === 'zip') {
+        mimeType = 'application/zip';
+      } else {
+        console.error('Tipe file tidak didukung.');
+        return;
+      }
+
+
+      // // toggle this Menyimpan sebagai Blob dengan tipe yang sesuai
+      let fileDownload = new Blob([concatenatedChunks], { type: mimeType }); 
+      let url = URL.createObjectURL(fileDownload);
+      let link = document.createElement('a');
+      link.href = url;
+      link.download = filename; 
+      link.click();
+      URL.revokeObjectURL(url);
     }
-}
+  }
+
+  async function disconnectBLE() {
+    // do here
+  }
 
   // async function receiveFileBlock(fileContents, bytesAlreadyReceived) {
-//     transferFileButton.disabled = connectButton.disabled = true;
-//     cancelTransferButton.disabled = false;
+  //   transferFileButton.disabled = connectButton.disabled = true;
+  //   cancelTransferButton.disabled = false;
 
-//     cancelTransferButton.addEventListener('click', function (event) {
-//        cancelTransfer();
-//     });
+  //   cancelTransferButton.addEventListener('click', function (event) {
+  //     cancelTransfer();
+  //   });
 
-//     let bytesRemaining = fileContents.byteLength - bytesAlreadyReceived;
+  //   let bytesRemaining = fileContents.byteLength - bytesAlreadyReceived;
 
-//     while (bytesAlreadyReceived < fileContents.byteLength && !cancelTransferFlag) {
-//         let blob = await fileBlockCharacteristic.readValue();
+  //   while (bytesAlreadyReceived < fileContents.byteLength && !cancelTransferFlag) {
+  //     let blob = await fileBlockCharacteristic.readValue();
 
-//         console.log("-----------------")
-//         console.log("Total size = " + fileContents.byteLength)
-//         console.log("received = " + bytesAlreadyReceived)
-//         console.log("remaining = " + bytesRemaining)
-//         console.log(blob.buffer)
+  //     console.log("-----------------")
+  //     console.log("Total size = " + fileContents.byteLength)
+  //     console.log("received = " + bytesAlreadyReceived)
+  //     console.log("remaining = " + bytesRemaining)
+  //     console.log(blob.buffer)
 
-//         let valueBar = (bytesAlreadyReceived / fileContents.byteLength) * 100;
-//         progressValue.value = valueBar
+  //     let valueBar = (bytesAlreadyReceived / fileContents.byteLength) * 100;
+  //     progressValue.value = valueBar
 
-//         const blockLength = blob.byteLength;
+  //     const blockLength = blob.byteLength;
 
-//         var blockView = new Uint8Array(fileContents, bytesAlreadyReceived, blockLength);
-//         blockView.set(new Uint8Array(blob.buffer), 0);
+  //     var blockView = new Uint8Array(fileContents, bytesAlreadyReceived, blockLength);
+  //     blockView.set(new Uint8Array(blob.buffer), 0);
 
-//         const textDecoder = new TextDecoder();
-//         const chunkText = textDecoder.decode(new Uint8Array(blob.buffer));
-//         console.log("Chunk yang diterima:", chunkText);
+  //     const textDecoder = new TextDecoder();
+  //     const chunkText = textDecoder.decode(new Uint8Array(blob.buffer));
+  //     console.log("Chunk yang diterima:", chunkText);
 
-//         bytesAlreadyReceived += blockLength;
-//     }
-
-//     if (cancelTransferFlag) {
-//     msg('Transfer cancelled.');
-//     cancelTransferFlag = false;
-//   } else {
-//     console.log("done gan");
-//     console.log("Data yang diterima: ");
-//     console.log("received = " + bytesAlreadyReceived);
-
-//     const textDecoder = new TextDecoder();
-//     fileText = textDecoder.decode(new Uint8Array(fileContents));
-//     console.log("File text:", fileText);
-
+  //     bytesAlreadyReceived += blockLength;
+  //   }
     
-//     let fileDownload = new Blob([fileText], { type: 'text/plain' });
-//     let url = URL.createObjectURL(fileDownload);
-//     let link = document.createElement('a');
-//     link.href = url;
-//     link.download = filename; 
-//     link.click();
-//     URL.revokeObjectURL(url);
-//   }}
+  //   if (cancelTransferFlag) {
+  //     msg('Transfer cancelled.');
+  //     cancelTransferFlag = false;
+  //   } else {
+  //     console.log("done gan");
+  //     console.log("Data yang diterima: ");
+  //     console.log("received = " + bytesAlreadyReceived);
 
+  //     const textDecoder = new TextDecoder();
+  //     fileText = textDecoder.decode(new Uint8Array(fileContents));
+  //     console.log("File text:", fileText);
+
+      
+  //     let fileDownload = new Blob([fileText], { type: 'text/plain' });
+  //     let url = URL.createObjectURL(fileDownload);
+  //     let link = document.createElement('a');
+  //     link.href = url;
+  //     link.download = filename; 
+  //     link.click();
+  //     URL.revokeObjectURL(url);
+  //   }
+  // }
+  //
 
   // async function receiveFileBlock(fileContents, bytesAlreadyReceived) {
-
   //   transferFileButton.disabled = connectButton.disabled = true;
   //   cancelTransferButton.disabled = false;
 
@@ -382,18 +439,243 @@
   //     fileText = textDecoder.decode(new Uint8Array(fileContents));
   //     console.log("File text:", fileText);
 
-  //     // let fileDownload = new Blob([fileText], { type: 'text/plain' });
-  //     // let url = URL.createObjectURL(fileDownload);
-  //     // let link = document.createElement('a');
-  //     // link.href = url;
-  //     // link.download = filename; // Change the filename and extension as needed
-  //     // link.click();
-  //     // URL.revokeObjectURL(url);
-
-      
+  //     let fileDownload = new Blob([fileText], { type: 'text/plain' });
+  //     let url = URL.createObjectURL(fileDownload);
+  //     let link = document.createElement('a');
+  //     link.href = url;
+  //     link.download = filename; // Change the filename and extension as needed
+  //     link.click();
+  //     URL.revokeObjectURL(url);
   //   }
   // }
 
 </script>
-
 </html>
+
+
+
+
+
+<!-- <!DOCTYPE html>
+<html>
+<head>
+  <title>BLE File Transfer Example Multi</title>
+</head>
+
+<body>
+  <div>
+    Test file transfer over BLE. To use:
+    <ul>
+      <li>Flash an Arduino Nano BLE Sense board with <a href="https://github.com/petewarden/ble_file_transfer">the test sketch</a>.</li>
+      <li>Click the connect button and pair with the board.</li>
+      <li>Press the transfer file button.</li>
+    </ul>
+    You should see the bytes remaining count down, and then a 'File transfer succeeded' message at the end.
+  </div>
+  <div>
+    <button id="connect-button">Connect</button>
+    <button id="transfer-file-button" disabled>Transfer File</button>
+    <button id="cancel-transfer-button" disabled>Cancel Transfer</button>
+    <div id="transfer-progress" style="display: none;">
+      <label for="file">Uploading progress:</label>
+      <progress id="transfer-file" value="0" max="100"> 0% </progress>
+    </div>
+    <div id="status-label">Click button to connect to the board</div>
+  </div>
+</body>
+<script type="text/javascript">
+  let filename;
+  let cancelTransferFlag = false;
+  let fileInfos = []; // To store file information
+
+  // Global variables for BLE characteristics
+  let commandCharacteristic;
+  let responsCharacteristic;
+  let fileBlockCharacteristic;
+  let checksumCharacteristic;
+
+  const SERVICE_UUID = 'bf88b656-0000-4a61-86e0-769c74863660';
+  const COMMAND_UUID = 'bf88b656-3001-4a61-86e0-769c74863660';
+  const RESPONS_UUID = 'bf88b656-3002-4a61-86e0-769c74863660';
+  const BLOCK_FILE_UUID = 'bf88b656-3003-4a61-86e0-769c74863660';
+  const CHECKSUM_UUID = 'bf88b656-3004-4a61-86e0-769c74863660';
+
+  const connectButton = document.getElementById('connect-button');
+  const transferFileButton = document.getElementById('transfer-file-button');
+  const cancelTransferButton = document.getElementById('cancel-transfer-button');
+  const progressBar = document.getElementById('transfer-progress');
+  const progressValue = document.getElementById('transfer-file');
+  const statusElement = document.getElementById('status-label');
+
+  if (!("bluetooth" in navigator)) {
+    msg('Browser not supported');
+    alert('Error: This browser doesn\'t support Web Bluetooth. Try using Chrome.');
+  }
+
+  function msg(m) {
+    statusElement.innerHTML = m;
+  }
+
+  connectButton.addEventListener('click', function () {
+    connect();
+  });
+
+  async function connect() {
+    msg('Requesting device ...');
+    const device = await navigator.bluetooth.requestDevice({
+      filters: [{ services: [SERVICE_UUID] }]
+    });
+
+    msg('Connecting to device ...' + device.name);
+    console.log('Connecting to device ...', device.name);
+
+    function onDisconnected(event) {
+      transferFileButton.disabled = cancelTransferButton.disabled = true;
+      connectButton.disabled = false;
+      msg('Device ' + device.name + ' is disconnected.');
+    }
+
+    device.addEventListener('gattserverdisconnected', onDisconnected);
+
+    msg('Getting primary server ...');
+    const server = await device.gatt.connect();
+    
+    msg('Getting primary service ...');
+    const service = await server.getPrimaryService(SERVICE_UUID);
+    
+    msg('Getting COMMAND characteristics ...');
+    commandCharacteristic = await service.getCharacteristic(COMMAND_UUID);
+    
+    msg('Getting RESPONS characteristics ...');
+    responsCharacteristic = await service.getCharacteristic(RESPONS_UUID);
+    
+    msg('Getting BLOB characteristics ...');
+    fileBlockCharacteristic = await service.getCharacteristic(BLOCK_FILE_UUID);
+
+    msg('Getting CHECKSUM characteristics ...');
+    checksumCharacteristic = await service.getCharacteristic(CHECKSUM_UUID);
+
+    msg('Ready...');
+    transferFileButton.disabled = cancelTransferButton.disabled = false;
+    connectButton.disabled = true;
+
+    transferFileButton.addEventListener('click', async function () {
+      msg("Requesting File...");
+      requestFile();
+    });
+  }
+
+  async function requestFile() {
+    progressBar.style.display = 'inline-block';
+    progressValue.value = 0;
+
+    const commandStr = 'REQ_LOG_DATA';
+    const commandArray = new Uint8Array(commandStr.length);
+    for (let i = 0; i < commandArray.length; ++i) {
+      commandArray[i] = commandStr.charCodeAt(i);
+    }
+
+    await commandCharacteristic.writeValue(commandArray);
+
+    let fileInfo = await responsCharacteristic.readValue();
+    let fileStrLength = fileInfo.getUint8(4, true);
+    filename = String.fromCharCode.apply(String, new Uint8Array(fileInfo.buffer, 5, fileStrLength));
+    let fileSize = fileInfo.getUint32(0, true);
+
+    let fileBuffer = new ArrayBuffer(fileSize);
+    msg("Start receiving file");
+
+    let startTime = performance.now();
+    await receiveFileBlock(fileBuffer, 0);
+    let endTime = performance.now();
+    let timeTaken = endTime - startTime;
+    let totalSeconds = Math.floor(timeTaken / 1000);
+    let hours = Math.floor(totalSeconds / 3600);
+    let minutes = Math.floor((totalSeconds % 3600) / 60);
+    let seconds = totalSeconds % 60;
+
+    console.log(`Time: ${hours} jam, ${minutes} menit, ${seconds} detik`);
+    msg("Finished");
+
+    transferFileButton.disabled = false;
+    cancelTransferButton.disabled = true;
+
+    progressValue.value = 100;
+    progressBar.style.display = 'none';
+  }
+
+  async function cancelTransfer() {
+    const commandStr = 'CANCEL_TRANSFER';
+    const commandArray = new Uint8Array(commandStr.length);
+    for (let i = 0; i < commandArray.length; ++i) {
+      commandArray[i] = commandStr.charCodeAt(i);
+    }
+
+    await commandCharacteristic.writeValue(commandArray);
+    cancelTransferFlag = true;
+  }
+
+  async function receiveFileBlock(fileContents, bytesAlreadyReceived) {
+    transferFileButton.disabled = connectButton.disabled = true;
+    cancelTransferButton.disabled = false;
+
+    cancelTransferButton.addEventListener('click', function () {
+      cancelTransfer();
+    });
+
+    let receivedChunks = [];
+    const chunkSize = 512; // You can adjust the chunk size here
+    const progressUpdateInterval = 10; // Update progress bar every 10%
+
+    while (bytesAlreadyReceived < fileContents.byteLength && !cancelTransferFlag) {
+      let blob = await fileBlockCharacteristic.readValue();
+      receivedChunks.push(new Uint8Array(blob.buffer));
+      bytesAlreadyReceived += blob.byteLength;
+
+      // Update progress bar periodically
+      if ((bytesAlreadyReceived / fileContents.byteLength) * 100 >= progressValue.value + progressUpdateInterval) {
+        progressValue.value += progressUpdateInterval;
+      }
+    }
+
+    if (cancelTransferFlag) {
+      msg('Transfer cancelled 😔');
+      cancelTransferFlag = false;
+    } else {
+      msg("Transfer finished 🤗");
+
+      let concatenatedChunks = new Uint8Array(fileContents.byteLength);
+      let offset = 0;
+
+      receivedChunks.forEach(chunk => {
+        concatenatedChunks.set(chunk, offset);
+        offset += chunk.length;
+      });
+
+      let mimeType = determineMimeType(filename);
+      let fileDownload = new Blob([concatenatedChunks], { type: mimeType });
+      let url = URL.createObjectURL(fileDownload);
+      let link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  function determineMimeType(filename) {
+    const ext = filename.split('.').pop();
+    switch (ext) {
+      case 'pdf': return 'application/pdf';
+      case 'txt':
+      case 'log': return 'text/plain';
+      case 'png': return 'image/png';
+      case 'jpg':
+      case 'jpeg': return 'image/jpeg';
+      case 'tar': return 'application/x-tar';
+      case 'zip': return 'application/zip';
+      default: console.error('Unsupported file type.'); return '';
+    }
+  }
+</script>
+</html> -->
